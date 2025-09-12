@@ -155,15 +155,31 @@ df_first_OSL <- DD_OSL %>%
   group_by(eid) %>%
   filter(session == min(session, na.rm = TRUE)) %>%
   ungroup()
-mean(df_first_OSL$Disease_duration)
-sd(df_first_OSL$Disease_duration)
-mean(DD_BGO$Disease_duration,na.rm=T)
-sd(DD_BGO$Disease_duration,na.rm=T)
-
-DD = rbind(df_first_OSL%>%dplyr::select(eid,Disease_duration),DD_BGO%>%dplyr::select(eid,Disease_duration))
-DD = DD[DD$eid %in% cross$eid,]
+DD_BGO = DD_BGO[DD_BGO$eid %in% long$eid,]
+DD_BGO$session = 1
+DD = rbind(df_first_OSL%>%dplyr::select(eid,session,Disease_duration),DD_BGO%>%dplyr::select(eid,session,Disease_duration))
+#DD = DD[DD$eid %in% cross$eid,]
 DD = unique(DD)
 DD %>% summarize(M = mean(Disease_duration),SD = sd(Disease_duration))
+
+# integrate DD into long dataframe
+#long = long %>%  left_join(DD, by = c("eid","session"))
+
+long <- long %>%
+  # join disease duration to each subject
+  left_join(DD %>% dplyr::select(eid, Disease_duration), by = "eid") %>%
+  group_by(eid) %>%
+  arrange(age, .by_group = TRUE) %>%
+  mutate(
+    # baseline age = first observed age
+    baseline_age = first(age),
+    # elapsed years since baseline
+    age_diff = age - baseline_age,
+    # disease duration at each timepoint
+    Disease_duration = Disease_duration + age_diff
+  ) %>%
+  ungroup()
+
 # 1. Case-control checks-----------
 # 1.1 number of deviations---------
 cross$nb_deviations = cross %>%
@@ -172,8 +188,8 @@ cross$nb_deviations = cross %>%
   transmute(z_score_sum = rowSums(.)) %>%
   pull(z_score_sum)
 cross %>% group_by(diagnosis) %>% summarize(M = mean(nb_deviations), SD = sd(nb_deviations))
-psych::cohen.d(cross$nb_deviations,factor(cross$diagnosis))[1]
-rstatix::t_test(cross, nb_deviations~diagnosis)
+# psych::cohen.d(cross$nb_deviations,factor(cross$diagnosis))[1]
+# rstatix::t_test(cross, nb_deviations~diagnosis)
 m = glm(nb_deviations~diagnosis, data = cross, family = "negative.binomial"(theta = 1))
 summary(m)
 exp(coef(m)["diagnosisMS"])
@@ -212,16 +228,16 @@ diffs = group_means %>%
 # Calculate mean and SD of absolute values
 #diffs %>% summarise(mean_abs = mean(abs(difference)),sd_abs = sd(abs(difference)))
 diffs %>% summarise(mean_abs = mean((difference)),sd_abs = sd((difference)))
-
-# express this as an effect size (difference of means) and add a p-value
-effsize::cohen.d(diffs%>% gather(variable, value) %>%filter(variable!="difference")%>%pull(value),diffs%>%gather(variable, value) %>%filter(variable!="difference")%>%pull(variable))
-t_test(diffs%>%gather(variable, value) %>%filter(variable!="difference"),value~variable)
-
-diffs[order(diffs$MS),]
-z_scores %>% t_test(Left.Thalamus_z_score~diagnosis)
-effsize::cohen.d(z_scores$Left.Thalamus_z_score, z_scores$diagnosis)
-z_scores %>% t_test(Right.Thalamus_z_score~diagnosis)
-effsize::cohen.d(z_scores$Right.Thalamus_z_score, z_scores$diagnosis)
+# 
+# # express this as an effect size (difference of means) and add a p-value
+# effsize::cohen.d(diffs%>% gather(variable, value) %>%filter(variable!="difference")%>%pull(value),diffs%>%gather(variable, value) %>%filter(variable!="difference")%>%pull(variable))
+# t_test(diffs%>%gather(variable, value) %>%filter(variable!="difference"),value~variable)
+# 
+# diffs[order(diffs$MS),]
+# z_scores %>% t_test(Left.Thalamus_z_score~diagnosis)
+# effsize::cohen.d(z_scores$Left.Thalamus_z_score, z_scores$diagnosis)
+# z_scores %>% t_test(Right.Thalamus_z_score~diagnosis)
+# effsize::cohen.d(z_scores$Right.Thalamus_z_score, z_scores$diagnosis)
 
 # plot group-wise Z-vals and their differences
 z_long <- diffs %>%
@@ -415,16 +431,16 @@ m = lm(fatigue~nb_deviations,long2%>%filter(session == 1))
 summary(m)
 effectsize::standardize_parameters(m)
 long2%>%filter(session == 1) %>% summarize(M = mean(na.omit(fatigue)), SD = sd(na.omit(fatigue)))
-# 2.1.4 number of deviations and age(ing)----
-m = lm(nb_deviations~age,long%>%filter(session == 1))
-m = lmer(nb_deviations~age+(1|eid),long)
+# 2.1.4 number of deviations and disease duration / age(ing)----
+m = lm(nb_deviations~Disease_duration,long%>%filter(session == 1))
+m = lmer(nb_deviations~Disease_duration+(1|eid),long)
 summary(m)
 effectsize::standardize_parameters(m)
 #
 #
 # 2.2 Regional associations ----
 # ---- Function to extract standardized coefficients manually
-extract_std_coeffs <- function(data, predictor = "age") {
+extract_std_coeffs <- function(data, predictor = "Disease_duration") {
   regions <- data %>% dplyr::select(ends_with("z_score")) %>% names()
   
   # Standardize predictor
@@ -477,14 +493,14 @@ run_and_plot <- function(long, predictor) {
 }
 
 # ---- Application of functions
-age_plot     <- run_and_plot(long, "age")
+age_plot     <- run_and_plot(long, "Disease_duration")
 edss_plot    <- run_and_plot(long, "edss")
 pasat_plot   <- run_and_plot(long1, "PASAT")
 fatigue_plot <- run_and_plot(long2, "fatigue")
 
 large_plot = ggarrange(age_plot, edss_plot,
           pasat_plot, fatigue_plot, 
-          ncol=1,labels=c("Age","EDSS","PASAT","Fatigue"),
+          ncol=1,labels=c("Disease Duration","EDSS","PASAT","Fatigue"),
           hjust = c(0,0,0,0))
 ggsave(paste(savepath,"Long_Effects.pdf",sep=""),plot=large_plot, width = 10, height = 8)
 
@@ -524,7 +540,7 @@ run_and_extract <- function(df, predictor) {
   results <- map_dfr(regions, extract_coef)
   return(results)
 }
-age_coefs     <- run_and_extract(long,  "age")
+age_coefs     <- run_and_extract(long,  "Disease_duration")
 edss_coefs    <- run_and_extract(long,  "edss")
 pasat_coefs   <- run_and_extract(long1, "PASAT")
 fatigue_coefs <- run_and_extract(long2, "fatigue")
@@ -561,7 +577,7 @@ run_and_extract_pvals <- function(df, predictor) {
   return(results)
 }
 # apply functions and put it all together
-age_pvals     <- run_and_extract_pvals(long,  "age")
+age_pvals     <- run_and_extract_pvals(long,  "Disease_duration")
 edss_pvals    <- run_and_extract_pvals(long,  "edss")
 pasat_pvals   <- run_and_extract_pvals(long1, "PASAT")
 fatigue_pvals <- run_and_extract_pvals(long2, "fatigue")
@@ -592,7 +608,7 @@ z <- function(x) {
 }
 
 # Extract standardized coefficients using lm()
-extract_std_coeffs_cross <- function(data, predictor = "age") {
+extract_std_coeffs_cross <- function(data, predictor = "Disease_duration") {
   regions <- data %>% dplyr::select(ends_with("z_score")) %>% names()
   data <- data %>% mutate(std_predictor = scale(.data[[predictor]])[,1])
   
@@ -676,19 +692,19 @@ run_and_plot_cross <- function(df, predictor) {
 }
 
 # ---- Apply All Cross-sectional Analyses
-age_plot     <- run_and_plot_cross(long %>% filter(session == 1), "age")
+age_plot     <- run_and_plot_cross(long %>% filter(session == 1), "Disease_duration")
 edss_plot    <- run_and_plot_cross(long %>% filter(session == 1), "edss")
 pasat_plot   <- run_and_plot_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_plot <- run_and_plot_cross(long2 %>% filter(session == 1), "fatigue")
 
 # Combine plots
 large_plot <- ggarrange(age_plot, edss_plot, pasat_plot, fatigue_plot,
-                        ncol = 1, labels = c("Age", "EDSS", "PASAT", "Fatigue"),
+                        ncol = 1, labels = c("Disease Duration", "EDSS", "PASAT", "Fatigue"),
                         hjust = c(0, 0, 0, 0))
 ggsave(paste0(savepath, "Cross_Effects.pdf"), plot = large_plot, width = 10, height = 8)
 
 # ---- Extract Coefficients and P-values for Tables
-age_coefs     <- run_and_extract_cross(long %>% filter(session == 1), "age")
+age_coefs     <- run_and_extract_cross(long %>% filter(session == 1), "Disease_duration")
 edss_coefs    <- run_and_extract_cross(long %>% filter(session == 1), "edss")
 pasat_coefs   <- run_and_extract_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_coefs <- run_and_extract_cross(long2 %>% filter(session == 1), "fatigue")
@@ -698,7 +714,7 @@ all_coefs <- bind_rows(age_coefs, edss_coefs, pasat_coefs, fatigue_coefs) %>%
 all_coefs[2:5] <- round(all_coefs[2:5], 2)
 write.csv(all_coefs, paste0(savepath, "cross_associations.csv"), row.names = FALSE)
 
-age_pvals     <- run_and_extract_pvals_cross(long %>% filter(session == 1), "age")
+age_pvals     <- run_and_extract_pvals_cross(long %>% filter(session == 1), "Disease_duration")
 edss_pvals    <- run_and_extract_pvals_cross(long %>% filter(session == 1), "edss")
 pasat_pvals   <- run_and_extract_pvals_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_pvals <- run_and_extract_pvals_cross(long2 %>% filter(session == 1), "fatigue")
@@ -725,6 +741,14 @@ write.csv(all_pvals_uncorrected_wide, paste0(savepath, "cross_associations_pvalu
 x = (lm(scale(rh_caudalmiddlefrontal_volume_z_score)~scale(age),data = long %>% filter(session == 1)))
 summary(x)
 confint(x)
+## Disease duration assoctiations
+x = (lm(scale(Left.Thalamus)~scale(Disease_duration),data = long %>% filter(session == 1)))
+summary(x)
+confint(x)
+x = (lm(scale(Right.Thalamus)~scale(Disease_duration),data = long %>% filter(session == 1)))
+summary(x)
+confint(x)
+
 ## EDSS assoctiations
 x = (lm(scale(Left.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
 summary(x)
@@ -762,8 +786,8 @@ confint(x)
 m = lmer(scale(Left.Thalamus_z_score)~scale(edss)+(1|eid),long)
 m = lmer(scale(Right.Thalamus_z_score)~scale(edss)+(1|eid),long)
 
-m = lmer(scale(Left.Thalamus_z_score)~scale(age)+(1|eid),long)
-m = lmer(scale(Right.Thalamus_z_score)~scale(age)+(1|eid),long)
+m = lmer(scale(Left.Thalamus_z_score)~scale(Disease_duration)+(1|eid),long)
+m = lmer(scale(Right.Thalamus_z_score)~scale(Disease_duration)+(1|eid),long)
 
 m = lmer(scale(rh_medialorbitofrontal_z_score)~scale(PASAT)+(1|eid),long1)
 
