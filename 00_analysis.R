@@ -110,6 +110,13 @@ long$eid = EID
 # descriptives
 ## rows cross
 cross %>% filter(diagnosis == "MS") %>%nrow # matched sample
+
+# make sure that the first session is labelled correctly
+long <- long %>%
+  group_by(eid) %>%
+  mutate(session = session - min(session) + 1) %>%
+  ungroup()
+
 length(unique(long %>% filter(data == "MS" & session ==1)  %>% na.omit %>% pull(eid))) # Oslo
 length(unique(long %>% select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% filter(data == "OFAMS" & session ==1)  %>% na.omit %>% pull(eid))) # Bergen
 
@@ -153,9 +160,10 @@ sd(df_first_OSL$Disease_duration)
 mean(DD_BGO$Disease_duration,na.rm=T)
 sd(DD_BGO$Disease_duration,na.rm=T)
 
-mean(c(df_first_OSL$Disease_duration, DD_BGO$Disease_duration))
-sd(c(df_first_OSL$Disease_duration, DD_BGO$Disease_duration))
-
+DD = rbind(df_first_OSL%>%select(eid,Disease_duration),DD_BGO%>%select(eid,Disease_duration))
+DD = DD[DD$eid %in% cross$eid,]
+DD = unique(DD)
+DD %>% summarize(M = mean(Disease_duration),SD = sd(Disease_duration))
 # 1. Case-control checks-----------
 # 1.1 number of deviations---------
 cross$nb_deviations = cross %>%
@@ -166,6 +174,19 @@ cross$nb_deviations = cross %>%
 cross %>% group_by(diagnosis) %>% summarize(M = mean(nb_deviations), SD = sd(nb_deviations))
 psych::cohen.d(cross$nb_deviations,factor(cross$diagnosis))[1]
 rstatix::t_test(cross, nb_deviations~diagnosis)
+
+# plot some distributions
+panel1 = ggplot(cross, aes(x=nb_deviations, color=diagnosis)) +
+  geom_density() + theme_bw() + xlab("Number of Deviations") + ylab("Density") +
+  labs(color = "Group")
+panel2 = ggplot(cross, aes(x=Left.Thalamus_z_score, color=diagnosis)) +
+  geom_density() + theme_bw() + xlab("Left Thalamus Deviations") + ylab("Density")+
+  labs(color = "Group")
+panel3 = ggplot(cross, aes(x=Right.Thalamus_z_score, color=diagnosis)) +
+  geom_density() + theme_bw() + xlab("Right Thalamus Deviations") + ylab("Density")+
+  labs(color = "Group")
+panels = ggarrange(panel1,0,panel2, panel3)
+ggsave(panels,file = paste(savepath,"Distributions.pdf",sep=""), width = 7, height = 6)
 
 # 1.2 Z-score comparison-----------
 # Select z_score columns
@@ -194,6 +215,10 @@ effsize::cohen.d(diffs%>% gather(variable, value) %>%filter(variable!="differenc
 t_test(diffs%>%gather(variable, value) %>%filter(variable!="difference"),value~variable)
 
 diffs[order(diffs$MS),]
+z_scores %>% t_test(Left.Thalamus_z_score~diagnosis)
+effsize::cohen.d(z_scores$Left.Thalamus_z_score, z_scores$diagnosis)
+z_scores %>% t_test(Right.Thalamus_z_score~diagnosis)
+effsize::cohen.d(z_scores$Right.Thalamus_z_score, z_scores$diagnosis)
 
 # plot group-wise Z-vals and their differences
 z_long <- diffs %>%
@@ -331,12 +356,12 @@ long$nb_deviations = long %>%
   mutate_all(~ ifelse(. <= -1.96, 1, 0)) %>%
   transmute(z_score_sum = rowSums(.)) %>%
   pull(z_score_sum)
-m = lmer(edss~nb_deviations+age+sex+(1|eid),long)
-summary(m)
-m = lm(edss~nb_deviations+age+sex,long%>%filter(session == 1))
+m = lmer(edss~nb_deviations+(1|eid),long)
 summary(m)
 effectsize::standardize_parameters(m)
-print("The number of deviations, measured by EDSS, does not tell us something about the disability development but baseline state.")
+m = lm(edss~nb_deviations,long%>%filter(session == 1))
+summary(m)
+effectsize::standardize_parameters(m)
 
 # 2.1.2 number of deviations and PASAT----
 #
@@ -355,9 +380,10 @@ names(pasat1) = c("eid","session","PASAT")
 pasat1$session = ifelse(pasat1$session == "BL_PASATcorrect",1,0)+ifelse(pasat1$session == "PASAT_24M",25,0)+ifelse(pasat1$session == "PASAT_OFAMS10",145,0)
 
 long1 = merge(rbind(PASAT_OSL,pasat1),long,by=c("eid","session"))
-m = lmer(PASAT~nb_deviations+age+sex+TotalGrayVol+(1|eid),long1)
+long1%>%filter(session == 1)%>%summarize(M = mean(PASAT), SD = sd(PASAT))
+m = lmer(PASAT~nb_deviations+(1|eid),long1)
 summary(m)
-m = lm(PASAT~nb_deviations+age+sex+TotalGrayVol,long1%>%filter(session == 1))
+m = lm(PASAT~nb_deviations,long1%>%filter(session == 1))
 summary(m)
 effectsize::standardize_parameters(m)
 #
@@ -381,14 +407,14 @@ fati$fatigue = fati %>% select(A,     B,     C,     D,     E,     F,     G,     
 fati = fati %>% select(eid,session,fatigue)
 fati = rbind(fati,fati_OSL)
 long2 = merge(fati,long,by=c("eid","session"))
-m = lmer(fatigue~nb_deviations+age+sex+(1|eid),long2)
-m = lm(fatigue~nb_deviations+age+sex,long2%>%filter(session == 1))
+m = lmer(fatigue~nb_deviations+(1|eid),long2)
+m = lm(fatigue~nb_deviations,long2%>%filter(session == 1))
 summary(m)
 effectsize::standardize_parameters(m)
-
+long2%>%filter(session == 1) %>% summarize(M = mean(na.omit(fatigue)), SD = sd(na.omit(fatigue)))
 # 2.1.4 number of deviations and age(ing)----
-m = lm(nb_deviations~age+sex+TotalGrayVol,long%>%filter(session == 1))
-m = lmer(nb_deviations~age+sex+TotalGrayVol+(1|eid),long)
+m = lm(nb_deviations~age,long%>%filter(session == 1))
+m = lmer(nb_deviations~age+(1|eid),long)
 summary(m)
 effectsize::standardize_parameters(m)
 #
@@ -693,7 +719,7 @@ write.csv(all_pvals_uncorrected_wide, paste0(savepath, "cross_associations_pvalu
 
 ######### follow-up for CIs: Cross-sectional data
 ## Age associations
-x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(age),data = long %>% filter(session == 1)))
+x = (lm(scale(rh_caudalmiddlefrontal_z_score)~scale(age),data = long %>% filter(session == 1)))
 summary(x)
 confint(x)
 ## EDSS assoctiations
@@ -704,63 +730,44 @@ x = (lm(scale(Right.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
 summary(x)
 confint(x)
 
-x = (lm(scale(Right.Putamen)~scale(edss),data = long %>% filter(session == 1)))
+# PASAT
+x = (lm(scale(Right.Putamen)~scale(PASAT),data = long1 %>% filter(session == 1)))
+summary(x)
+confint(x)
+x = (lm(scale(Left.Putamen)~scale(PASAT),data = long1 %>% filter(session == 1)))
 summary(x)
 confint(x)
 
 # FSS
-x = (lm(scale(rh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+x = (lm(scale(rh_superiorfrontal_z_score)~scale(fatigue),data = long2 %>% filter(session == 1)))
 summary(x)
 confint(x)
-x = (lm(scale(lh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+x = (lm(scale(lh_superiorfrontal_z_score)~scale(fatigue),data = long2 %>% filter(session == 1)))
 summary(x)
 confint(x)
-x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+x = (lm(scale(rh_caudalmiddlefrontal_z_score)~scale(fatigue),data = long2 %>% filter(session == 1)))
 summary(x)
 confint(x)
-x = (lm(scale(rh_paracentral_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+x = (lm(scale(rh_paracentral_z_score)~scale(fatigue),data = long2 %>% filter(session == 1)))
 summary(x)
 confint(x)
-x = (lm(scale(lh_supramarginal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+x = (lm(scale(lh_supramarginal_z_score)~scale(fatigue),data = long2 %>% filter(session == 1)))
 summary(x)
 confint(x)
 
 ######### follow-up for CIs: Longitudinal data
-## Age associations
-#
-#
+m = lmer(scale(Left.Thalamus_z_score)~scale(edss)+(1|eid),long)
+m = lmer(scale(Right.Thalamus_z_score)~scale(edss)+(1|eid),long)
 
-# Test area -------
-#
-# Hypothesis driven tests (thalamus and putamen)
-m = lmer(edss~Left.Thalamus_z_score+(1|eid),long)
-m = lmer(edss~Right.Thalamus_z_score+(1|eid),long)
+m = lmer(scale(Left.Thalamus_z_score)~scale(age)+(1|eid),long)
+m = lmer(scale(Right.Thalamus_z_score)~scale(age)+(1|eid),long)
 
-m = lmer(edss~Left.Thalamus+age+sex+TotalGrayVol+(1|eid),long)
-m = lmer(edss~Right.Thalamus+age+sex+TotalGrayVol+(1|eid),long)
+m = lmer(scale(rh_medialorbitofrontal_z_score)~scale(PASAT)+(1|eid),long1)
 
-m = lm(edss~Left.Thalamus_z_score,long%>%filter(session==1))
-m = lm(edss~Right.Thalamus_z_score,long%>%filter(session==1))
-
-m = lm(edss~Left.Thalamus+age+sex+TotalGrayVol,long%>%filter(session==1))
-m = lm(edss~Right.Thalamus+age+sex+TotalGrayVol,long%>%filter(session==1))
-
-
-m = lmer(PASAT~Left.Thalamus_z_score+age+sex+TotalGrayVol+(1|eid),long1)
-m = lmer(PASAT~Right.Thalamus_z_score+age+sex+TotalGrayVol+(1|eid),long1)
-
-m = lmer(fatigue~Left.Thalamus_z_score+age+sex+(1|eid),long2)
-m = lmer(fatigue~Right.Thalamus_z_score+age+sex+(1|eid),long2)
-
-
-m = lmer(edss~lh_superiorfrontal_volume_z_score+age+sex+(1|eid),long)
-m = lmer(edss~rh_superiorfrontal_volume_z_score+age+sex+(1|eid),long)
-
-m = lmer(edss~lh_superiorfrontal_volume+age+sex+TotalGrayVol+(1|eid),long)
-m = lmer(edss~rh_superiorfrontal_volume+age+sex+TotalGrayVol+(1|eid),long)
-
-
+m = lmer(scale(lh_precentral_volume_z_score)~scale(fatigue)+(1|eid),long2)
 summary(m)
+confint(m)
+
 
 # 3. Individual-level assessments----
 #
@@ -780,12 +787,12 @@ plot_indiv_c = merge(z_cortical %>% filter(group=="HC"),data.frame(perc = test, 
 plot_indiv_c$perc=plot_indiv_c$perc*100
 indi0 = ggplot(dk %>% as_tibble() %>% left_join(plot_indiv_c %>% select(region,hemi,perc) %>% as_tibble())) + 
   geom_brain(atlas = dk,aes(fill = perc),color="black")+
-  scale_fill_gradient2(low = "white",mid = "white",high="black",limits = c(0,40)) +
+  scale_fill_gradient2(low = "white",mid = "white",high="black",limits = c(0,27)) +
   theme_void() + theme(legend.position="none")
 plot_indiv = merge(z_subcortical,data.frame(perc = test, region.x = gsub("_z_score","",names(test)), by = "region.x"))
 plot_indiv$perc=plot_indiv$perc*100
 indi1 = ggplot(plot_indiv) + geom_brain(atlas = aseg, side = "coronal",aes(fill = perc),color="black")+
-  scale_fill_gradient2(low = "white",mid = "white",high="black",limits = c(0,40)) + 
+  scale_fill_gradient2(low = "white",mid = "white",high="black",limits = c(0,27)) + 
   #labs(title="Regional volume loss") + 
   theme_void() + labs(fill = "Deviation %")
 

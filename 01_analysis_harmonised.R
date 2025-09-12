@@ -21,7 +21,7 @@
 rm(list = ls(all.names = TRUE)) # clear all objects includes hidden objects.
 gc() #free up memory and report the memory usage.
 # define the savepath
-savepath = "/Users/max/Documents/Local/MS/NormativeModels/results/"
+savepath = "/Users/max/Documents/Local/MS/NormativeModels/Regular/results/"
 #
 # 0. Data wrangling----------------
 # load packages
@@ -33,8 +33,8 @@ pacman::p_load(tidyverse,psych,effsize,ggseg,patchwork,rstatix,ggpubr,
 pwr.f2.test(u = 3, v = 43, f2 = NULL, sig.level = 0.05, power = .80)
 
 # load data
-cross = read.csv("/Users/max/Documents/Local/MS/NormativeModels/code/Zscores_harmonised.csv")
-long = read.csv("/Users/max/Documents/Local/MS/NormativeModels/code/Zscores_long_harmonised.csv")
+cross = read.csv("/Users/max/Documents/Local/MS/NormativeModels/Regular/code/Zscores_harmonised.csv")
+long = read.csv("/Users/max/Documents/Local/MS/NormativeModels/Regular/code/Zscores_long_harmonised.csv")
 demo10 = read.csv('/Users/max/Documents/Local/MS/data/OFAMS88_OFAMS10_lifestylepaper_ updated_beskyttet.csv',sep = ";") # 10 years follow up demo & clin scores
 PASAT_OSL = read.csv("/Users/max/Documents/Local/Data/Oslo/Database_cognitive_phenotypes_MS_Oslo.csv")# zscored PASAT
 fati = read_sas("/Users/max/Documents/Local/MS/demographics/Statistikk-filer/fatigue.sas7bdat") # fatigue scores
@@ -71,8 +71,6 @@ pred["edss", "sex"] <- 1       # covariate
 # Perform imputation
 imp <- mice(long00, method = meth, predictorMatrix = pred, m = 5, seed = 123)
 
-
-
 # Extract all completed datasets as a list
 completed_list <- lapply(1:imp$m, function(i) complete(imp, i))
 
@@ -95,6 +93,11 @@ average_imputed_edss <- all_imputations %>%
   group_by(eid, session, age) %>%               # Group by unique row keys
   summarise(mean_edss = mean(edss), .groups = "drop")
 
+# make sure that the first session is labelled correctly
+long <- long %>%
+  group_by(eid) %>%
+  mutate(session = session - min(session) + 1) %>%
+  ungroup()
 
 long_surrogate = long[long$eid %in% long_no_na$eid,]
 long_surrogate$eid <- as.integer(as.factor(long_surrogate$eid))  # ensures grouping is preserved
@@ -105,6 +108,8 @@ long <- long_surrogate %>%
   select(-mean_edss)
 long = na.omit(long)
 long$eid = EID
+cross$diagnosis= c(replicate(nrow(cross)/2,"MS"),replicate(nrow(cross)/2,"HC"))
+
 # descriptives
 ## rows cross
 cross %>% filter(diagnosis == "MS") %>%nrow # matched sample
@@ -166,7 +171,7 @@ diffs = group_means %>%
   mutate(difference = MS - HC)
 
 # Calculate mean and SD of absolute values
-#diffs %>% summarise(mean_abs = mean(abs(difference)),sd_abs = sd(abs(difference)))
+diffs %>% summarise(mean_abs = mean(abs(difference)),sd_abs = sd(abs(difference)))
 diffs %>% summarise(mean_abs = mean((difference)),sd_abs = sd((difference)))
 
 # express this as an effect size (difference of means) and add a p-value
@@ -308,13 +313,15 @@ metric <- "Accuracy"
 # 2.1.1 number of deviations and edss----
 long$nb_deviations = long %>%
   select(ends_with("z_score")) %>%
-  mutate_all(~ ifelse(abs(.) > 2, 1, 0)) %>%
+  mutate_all(~ ifelse(. <= -1.96, 1, 0)) %>%
   transmute(z_score_sum = rowSums(.)) %>%
   pull(z_score_sum)
 m = lmer(edss~nb_deviations+age+sex+(1|eid),long)
+summary(m)
 m = lm(edss~nb_deviations+age+sex,long%>%filter(session == 1))
 summary(m)
-print("The number of deviations does not tell us something about the disability measured by EDSS.")
+effectsize::standardize_parameters(m)
+print("The number of deviations, measured by EDSS, does not tell us something about the disability development but baseline state.")
 
 # 2.1.2 number of deviations and PASAT----
 #
@@ -330,13 +337,13 @@ length(unique((PASAT_OSL %>% na.omit)$eid))
 pasat1 = demo10%>%dplyr::select(Patnr,BL_PASATcorrect,PASAT_24M, PASAT_OFAMS10)
 pasat1 = melt(pasat1, id.vars = c("Patnr"))
 names(pasat1) = c("eid","session","PASAT")
-pasat1$session = ifelse(pasat1$session == "BL_PASATcorrect",1,0)+ifelse(pasat1$session == "PASAT_24M",25,0)+ifelse(pasat1$session == "PASAT_OFAMS10",145,0)
-
+pasat1$session = ifelse(pasat1$session == "BL_PASATcorrect",1,0)+ifelse(pasat1$session == "PASAT_24M",24,0)+ifelse(pasat1$session == "PASAT_OFAMS10",145,0)
 long1 = merge(rbind(PASAT_OSL,pasat1),long,by=c("eid","session"))
 m = lmer(PASAT~nb_deviations+age+sex+TotalGrayVol+(1|eid),long1)
+summary(m)
 m = lm(PASAT~nb_deviations+age+sex+TotalGrayVol,long1%>%filter(session == 1))
 summary(m)
-
+effectsize::standardize_parameters(m)
 #
 # 2.1.3 number of deviations and fatigue----
 #
@@ -359,9 +366,9 @@ fati = fati %>% select(eid,session,fatigue)
 fati = rbind(fati,fati_OSL)
 long2 = merge(fati,long,by=c("eid","session"))
 m = lmer(fatigue~nb_deviations+age+sex+(1|eid),long2)
-m = lm(fatigue~nb_deviations+age+sex,long2%>%filter(session == 1))
 summary(m)
-
+effectsize::standardize_parameters(m)
+m = lm(fatigue~nb_deviations+age+sex,long2%>%filter(session == 1))
 
 # 2.1.4 number of deviations and age(ing)----
 m = lm(nb_deviations~age+sex+TotalGrayVol,long%>%filter(session == 1))
@@ -630,7 +637,7 @@ pasat_plot   <- run_and_plot_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_plot <- run_and_plot_cross(long2 %>% filter(session == 1), "fatigue")
 
 # Combine plots
-large_plot <- ggarrange(age_plot, edss_plot, pasat_plot, fatigue_plot,
+large_plot <- ggarrange(age_plot, edss_plot,pasat_plot, fatigue_plot, # did not compute: , pasat_plot, fatigue_plot
                         ncol = 1, labels = c("Age", "EDSS", "PASAT", "Fatigue"),
                         hjust = c(0, 0, 0, 0))
 ggsave(paste0(savepath, "Cross_Effects_harmonised_harmonised.pdf"), plot = large_plot, width = 10, height = 8)
@@ -668,76 +675,44 @@ all_pvals_uncorrected_wide <- all_pvals_uncorrected %>%
 all_pvals_uncorrected_wide[2:5] <- round(all_pvals_uncorrected_wide[2:5], 3)
 write.csv(all_pvals_uncorrected_wide, paste0(savepath, "cross_associations_pvalues_uncorrected_harmonised.csv"), row.names = FALSE)
 
-######### follow-up for CIs: Cross-sectional data
-## Age associations
-x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(age),data = long %>% filter(session == 1)))
-summary(x)
-confint(x)
-## EDSS assoctiations
-x = (lm(scale(Left.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
-summary(x)
-confint(x)
-x = (lm(scale(Right.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
-summary(x)
-confint(x)
-
-x = (lm(scale(Right.Putamen)~scale(edss),data = long %>% filter(session == 1)))
-summary(x)
-confint(x)
-
-# FSS
-x = (lm(scale(rh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
-summary(x)
-confint(x)
-x = (lm(scale(lh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
-summary(x)
-confint(x)
-x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
-summary(x)
-confint(x)
-x = (lm(scale(rh_paracentral_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
-summary(x)
-confint(x)
-x = (lm(scale(lh_supramarginal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
-summary(x)
-confint(x)
+# ######### follow-up for CIs: Cross-sectional data
+# ## Age associations
+# x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(age),data = long %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# ## EDSS assoctiations
+# x = (lm(scale(Left.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# x = (lm(scale(Right.Thalamus)~scale(edss),data = long %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# 
+# x = (lm(scale(Right.Putamen)~scale(edss),data = long %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# 
+# # FSS
+# x = (lm(scale(rh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# x = (lm(scale(lh_superiorfrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# x = (lm(scale(rh_caudalmiddlefrontal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# x = (lm(scale(rh_paracentral_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+# summary(x)
+# confint(x)
+# x = (lm(scale(lh_supramarginal_volume)~scale(fatigue),data = long2 %>% filter(session == 1)))
+# summary(x)
+# confint(x)
 
 ######### follow-up for CIs: Longitudinal data
 ## Age associations
 #
 #
-
-# Test area -------
-#
-# Hypothesis driven tests (thalamus and putamen)
-m = lmer(edss~Left.Thalamus_z_score+(1|eid),long)
-m = lmer(edss~Right.Thalamus_z_score+(1|eid),long)
-
-m = lmer(edss~Left.Thalamus+age+sex+TotalGrayVol+(1|eid),long)
-m = lmer(edss~Right.Thalamus+age+sex+TotalGrayVol+(1|eid),long)
-
-m = lm(edss~Left.Thalamus_z_score,long%>%filter(session==1))
-m = lm(edss~Right.Thalamus_z_score,long%>%filter(session==1))
-
-m = lm(edss~Left.Thalamus+age+sex+TotalGrayVol,long%>%filter(session==1))
-m = lm(edss~Right.Thalamus+age+sex+TotalGrayVol,long%>%filter(session==1))
-
-
-m = lmer(PASAT~Left.Thalamus_z_score+age+sex+TotalGrayVol+(1|eid),long1)
-m = lmer(PASAT~Right.Thalamus_z_score+age+sex+TotalGrayVol+(1|eid),long1)
-
-m = lmer(fatigue~Left.Thalamus_z_score+age+sex+(1|eid),long2)
-m = lmer(fatigue~Right.Thalamus_z_score+age+sex+(1|eid),long2)
-
-
-m = lmer(edss~lh_superiorfrontal_volume_z_score+age+sex+(1|eid),long)
-m = lmer(edss~rh_superiorfrontal_volume_z_score+age+sex+(1|eid),long)
-
-m = lmer(edss~lh_superiorfrontal_volume+age+sex+TotalGrayVol+(1|eid),long)
-m = lmer(edss~rh_superiorfrontal_volume+age+sex+TotalGrayVol+(1|eid),long)
-
-
-summary(m)
 
 # 3. Individual-level assessments----
 #
