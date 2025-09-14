@@ -39,18 +39,20 @@ demo10 = read.csv('/Users/max/Documents/Local/MS/data/OFAMS88_OFAMS10_lifestylep
 PASAT_OSL = read.csv("/Users/max/Documents/Local/Data/Oslo/Database_cognitive_phenotypes_MS_Oslo.csv")# zscored PASAT
 fati = read_sas("/Users/max/Documents/Local/MS/demographics/Statistikk-filer/fatigue.sas7bdat") # fatigue scores
 fati_OSL = read.csv("/Users/max/Documents/Local/Data/Oslo/fatigue_Oslo.csv")
+DD_OSL = read.csv("/Users/max/Documents/Local/Data/Oslo/Oslo_demographics.csv")
+DD_BGO = read.csv("/Users/max/Documents/Local/MS/results/interrim_data.csv")
 
 # missingness
-summary(is.na(long %>% select(c(eid, age, sex, data, edss, session), ends_with("z_score"))))
-paste("Total number of available MRI sessions:",long %>% select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow)
+summary(is.na(long %>% dplyr::select(c(eid, age, sex, data, edss, session), ends_with("z_score"))))
+paste("Total number of available MRI sessions:",long %>% dplyr::select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow)
 paste("EDSS is missing for this proportion of sessions:",
-      (1-long %>% select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% na.omit %>% nrow /
-         long %>% select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow)*100,
-      "%, corresponding to this number of sessions:", long %>% select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow-
-        long %>% select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% na.omit %>% nrow)
+      (1-long %>% dplyr::select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% na.omit %>% nrow /
+         long %>% dplyr::select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow)*100,
+      "%, corresponding to this number of sessions:", long %>% dplyr::select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit %>% nrow-
+        long %>% dplyr::select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% na.omit %>% nrow)
 # imputation
-long_no_na = long %>% select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit
-long00 = long[long$eid %in% long_no_na$eid,] %>% select(eid,age,sex,edss,session)
+long_no_na = long %>% dplyr::select(c(eid, age, sex, data, session), ends_with("z_score")) %>% na.omit
+long00 = long[long$eid %in% long_no_na$eid,] %>% dplyr::select(eid,age,sex,edss,session)
 EID = long_no_na$eid
 # Convert eid to integer as required by mice for clustering
 long00$eid <- as.integer(as.factor(long00$eid))  # ensures grouping is preserved
@@ -105,7 +107,7 @@ long_surrogate$eid <- as.integer(as.factor(long_surrogate$eid))  # ensures group
 long <- long_surrogate %>%
   left_join(average_imputed_edss, by = c("eid", "session", "age")) %>%
   mutate(edss = if_else(is.na(edss), mean_edss, edss)) %>%
-  select(-mean_edss)
+  dplyr::select(-mean_edss)
 long = na.omit(long)
 long$eid = EID
 cross$diagnosis= c(replicate(nrow(cross)/2,"MS"),replicate(nrow(cross)/2,"HC"))
@@ -114,7 +116,7 @@ cross$diagnosis= c(replicate(nrow(cross)/2,"MS"),replicate(nrow(cross)/2,"HC"))
 ## rows cross
 cross %>% filter(diagnosis == "MS") %>%nrow # matched sample
 length(unique(long %>% filter(data == "MS" & session ==1)  %>% na.omit %>% pull(eid))) # Oslo
-length(unique(long %>% select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% filter(data == "OFAMS" & session ==1)  %>% na.omit %>% pull(eid))) # Bergen
+length(unique(long %>% dplyr::select(c(eid, age, sex, data, edss, session), ends_with("z_score")) %>% filter(data == "OFAMS" & session ==1)  %>% na.omit %>% pull(eid))) # Bergen
 
 ## rows long
 length(unique(long  %>% na.omit %>% pull(eid)))
@@ -127,9 +129,9 @@ length(unique(long %>% filter(data == "OFAMS")%>% na.omit %>% pull(eid)))
 long %>% filter(data == "OFAMS") %>% na.omit %>% nrow
 
 ## age
-long %>% filter(session == 1) %>% select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
-long %>% filter(data == "OFAMS" & session == 1) %>% select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
-long %>% filter(data == "MS" & session == 1) %>% select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
+long %>% filter(session == 1) %>% dplyr::select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
+long %>% filter(data == "OFAMS" & session == 1) %>% dplyr::select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
+long %>% filter(data == "MS" & session == 1) %>% dplyr::select(age) %>% na.omit %>% summarize(M = round(mean(age),1), SD = round(sd(age),1))
 
 ## sex
 long %>% filter(session == 1) %>% group_by(sex) %>% summarise(n = n()) %>%mutate(freq = n / sum(n))
@@ -137,10 +139,43 @@ long %>% filter(data == "OFAMS" & session == 1) %>% group_by(sex) %>% summarise(
 long %>% filter(data == "MS" & session == 1) %>% group_by(sex) %>% summarise(n = n()) %>%mutate(freq = n / sum(n))
 
 ## edss
-long %>% filter(session == 1) %>% select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
-long %>% filter(data == "OFAMS"& session == 1) %>% select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
-long %>% filter(data == "MS"& session == 1) %>% select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
+long %>% filter(session == 1) %>% dplyr::select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
+long %>% filter(data == "OFAMS"& session == 1) %>% dplyr::select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
+long %>% filter(data == "MS"& session == 1) %>% dplyr::select(edss) %>% na.omit %>% summarize(M = round(mean(edss),1), SD = round(sd(edss),1))
+# disease duration descriptive
 
+# clean
+DD_OSL$eid = substr(DD_OSL$Individual_TimePoint,1,7)
+DD_OSL$session = as.numeric(substr(DD_OSL$Individual_TimePoint,9,10))
+DD_BGO$Disease_duration = DD_BGO$DISEASE_DURATION
+df_first_OSL <- DD_OSL %>%
+  group_by(eid) %>%
+  filter(session == min(session, na.rm = TRUE)) %>%
+  ungroup()
+DD_BGO = DD_BGO[DD_BGO$eid %in% long$eid,]
+DD_BGO$session = 1
+DD = rbind(df_first_OSL%>%dplyr::select(eid,session,Disease_duration),DD_BGO%>%dplyr::select(eid,session,Disease_duration))
+#DD = DD[DD$eid %in% cross$eid,]
+DD = unique(DD)
+DD %>% summarize(M = mean(Disease_duration),SD = sd(Disease_duration))
+
+# integrate DD into long dataframe
+#long = long %>%  left_join(DD, by = c("eid","session"))
+
+long <- long %>%
+  # join disease duration to each subject
+  left_join(DD %>% dplyr::select(eid, Disease_duration), by = "eid") %>%
+  group_by(eid) %>%
+  arrange(age, .by_group = TRUE) %>%
+  mutate(
+    # baseline age = first observed age
+    baseline_age = first(age),
+    # elapsed years since baseline
+    age_diff = age - baseline_age,
+    # disease duration at each timepoint
+    Disease_duration = Disease_duration + age_diff
+  ) %>%
+  ungroup()
 # 1. Case-control checks-----------
 # 1.1 number of deviations---------
 cross$nb_deviations = cross %>%
@@ -316,9 +351,9 @@ long$nb_deviations = long %>%
   mutate_all(~ ifelse(. <= -1.96, 1, 0)) %>%
   transmute(z_score_sum = rowSums(.)) %>%
   pull(z_score_sum)
-m = lmer(edss~nb_deviations+age+sex+(1|eid),long)
+m = lmer(edss~nb_deviations+(1|eid),long)
 summary(m)
-m = lm(edss~nb_deviations+age+sex,long%>%filter(session == 1))
+m = lm(edss~nb_deviations,long%>%filter(session == 1))
 summary(m)
 effectsize::standardize_parameters(m)
 print("The number of deviations, measured by EDSS, does not tell us something about the disability development but baseline state.")
@@ -339,9 +374,9 @@ pasat1 = melt(pasat1, id.vars = c("Patnr"))
 names(pasat1) = c("eid","session","PASAT")
 pasat1$session = ifelse(pasat1$session == "BL_PASATcorrect",1,0)+ifelse(pasat1$session == "PASAT_24M",24,0)+ifelse(pasat1$session == "PASAT_OFAMS10",145,0)
 long1 = merge(rbind(PASAT_OSL,pasat1),long,by=c("eid","session"))
-m = lmer(PASAT~nb_deviations+age+sex+TotalGrayVol+(1|eid),long1)
+m = lmer(PASAT~nb_deviations+(1|eid),long1)
 summary(m)
-m = lm(PASAT~nb_deviations+age+sex+TotalGrayVol,long1%>%filter(session == 1))
+m = lm(PASAT~nb_deviations,long1%>%filter(session == 1))
 summary(m)
 effectsize::standardize_parameters(m)
 #
@@ -365,21 +400,21 @@ fati$fatigue = fati %>% select(A,     B,     C,     D,     E,     F,     G,     
 fati = fati %>% select(eid,session,fatigue)
 fati = rbind(fati,fati_OSL)
 long2 = merge(fati,long,by=c("eid","session"))
-m = lmer(fatigue~nb_deviations+age+sex+(1|eid),long2)
+m = lmer(fatigue~nb_deviations+(1|eid),long2)
 summary(m)
 effectsize::standardize_parameters(m)
-m = lm(fatigue~nb_deviations+age+sex,long2%>%filter(session == 1))
+m = lm(fatigue~nb_deviations,long2%>%filter(session == 1))
 
 # 2.1.4 number of deviations and age(ing)----
-m = lm(nb_deviations~age+sex+TotalGrayVol,long%>%filter(session == 1))
-m = lmer(nb_deviations~age+sex+TotalGrayVol+(1|eid),long)
+m = lm(nb_deviations~Disease_duration,long%>%filter(session == 1))
+m = lmer(nb_deviations~Disease_duration+(1|eid),long)
 summary(m)
 effectsize::standardize_parameters(m)
 #
 #
 # 2.2 Regional associations ----
 # ---- Function to extract standardized coefficients manually
-extract_std_coeffs <- function(data, predictor = "age") {
+extract_std_coeffs <- function(data, predictor = "Disease_duration") {
   regions <- data %>% select(ends_with("z_score")) %>% names()
   
   # Standardize predictor
@@ -432,14 +467,14 @@ run_and_plot <- function(long, predictor) {
 }
 
 # ---- Application of functions
-age_plot     <- run_and_plot(long, "age")
+age_plot     <- run_and_plot(long, "Disease_duration")
 edss_plot    <- run_and_plot(long, "edss")
 pasat_plot   <- run_and_plot(long1, "PASAT")
 fatigue_plot <- run_and_plot(long2, "fatigue")
 
 large_plot = ggarrange(age_plot, edss_plot,
                        pasat_plot, fatigue_plot, 
-                       ncol=1,labels=c("Age","EDSS","PASAT","Fatigue"),
+                       ncol=1,labels=c("Disease Duration","EDSS","PASAT","Fatigue"),
                        hjust = c(0,0,0,0))
 ggsave(paste(savepath,"Long_Effects_harmonised.pdf",sep=""),plot=large_plot, width = 10, height = 8)
 
@@ -479,7 +514,7 @@ run_and_extract <- function(df, predictor) {
   results <- map_dfr(regions, extract_coef)
   return(results)
 }
-age_coefs     <- run_and_extract(long,  "age")
+age_coefs     <- run_and_extract(long,  "Disease_duration")
 edss_coefs    <- run_and_extract(long,  "edss")
 pasat_coefs   <- run_and_extract(long1, "PASAT")
 fatigue_coefs <- run_and_extract(long2, "fatigue")
@@ -516,7 +551,7 @@ run_and_extract_pvals <- function(df, predictor) {
   return(results)
 }
 # apply functions and put it all together
-age_pvals     <- run_and_extract_pvals(long,  "age")
+age_pvals     <- run_and_extract_pvals(long,  "Disease_duration")
 edss_pvals    <- run_and_extract_pvals(long,  "edss")
 pasat_pvals   <- run_and_extract_pvals(long1, "PASAT")
 fatigue_pvals <- run_and_extract_pvals(long2, "fatigue")
@@ -547,7 +582,7 @@ z <- function(x) {
 }
 
 # Extract standardized coefficients using lm()
-extract_std_coeffs_cross <- function(data, predictor = "age") {
+extract_std_coeffs_cross <- function(data, predictor = "Disease_duration") {
   regions <- data %>% select(ends_with("z_score")) %>% names()
   data <- data %>% mutate(std_predictor = scale(.data[[predictor]])[,1])
   
@@ -631,19 +666,19 @@ run_and_plot_cross <- function(df, predictor) {
 }
 
 # ---- Apply All Cross-sectional Analyses
-age_plot     <- run_and_plot_cross(long %>% filter(session == 1), "age")
+age_plot     <- run_and_plot_cross(long %>% filter(session == 1), "Disease_duration")
 edss_plot    <- run_and_plot_cross(long %>% filter(session == 1), "edss")
 pasat_plot   <- run_and_plot_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_plot <- run_and_plot_cross(long2 %>% filter(session == 1), "fatigue")
 
 # Combine plots
 large_plot <- ggarrange(age_plot, edss_plot,pasat_plot, fatigue_plot, # did not compute: , pasat_plot, fatigue_plot
-                        ncol = 1, labels = c("Age", "EDSS", "PASAT", "Fatigue"),
+                        ncol = 1, labels = c("Disease Duration", "EDSS", "PASAT", "Fatigue"),
                         hjust = c(0, 0, 0, 0))
 ggsave(paste0(savepath, "Cross_Effects_harmonised_harmonised.pdf"), plot = large_plot, width = 10, height = 8)
 
 # ---- Extract Coefficients and P-values for Tables
-age_coefs     <- run_and_extract_cross(long %>% filter(session == 1), "age")
+age_coefs     <- run_and_extract_cross(long %>% filter(session == 1), "Disease_duration")
 edss_coefs    <- run_and_extract_cross(long %>% filter(session == 1), "edss")
 pasat_coefs   <- run_and_extract_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_coefs <- run_and_extract_cross(long2 %>% filter(session == 1), "fatigue")
@@ -653,7 +688,7 @@ all_coefs <- bind_rows(age_coefs, edss_coefs, pasat_coefs, fatigue_coefs) %>%
 all_coefs[2:5] <- round(all_coefs[2:5], 2)
 write.csv(all_coefs, paste0(savepath, "cross_associations_harmonised.csv"), row.names = FALSE)
 
-age_pvals     <- run_and_extract_pvals_cross(long %>% filter(session == 1), "age")
+age_pvals     <- run_and_extract_pvals_cross(long %>% filter(session == 1), "Disease_duration")
 edss_pvals    <- run_and_extract_pvals_cross(long %>% filter(session == 1), "edss")
 pasat_pvals   <- run_and_extract_pvals_cross(long1 %>% filter(session == 1), "PASAT")
 fatigue_pvals <- run_and_extract_pvals_cross(long2 %>% filter(session == 1), "fatigue")
@@ -754,13 +789,13 @@ z_cols <- long %>% select(ends_with("z_score")) %>% names()
 
 # 2. Classify deviations: 1 if <= -1.96 else 0
 long_dev <- long %>%
-  select(eid, age, all_of(z_cols)) %>%
+  select(eid, Disease_duration, all_of(z_cols)) %>%
   mutate(across(all_of(z_cols), ~ ifelse(. <= -1.96, 1, 0)))
 
 # 3. Pivot longer for region-wise analysis
 long_dev_long <- long_dev %>%
   pivot_longer(cols = all_of(z_cols), names_to = "region", values_to = "deviation") %>%
-  arrange(eid, region, age)  # important for transitions
+  arrange(eid, region, Disease_duration)  # important for transitions
 
 # 4. Within-subject deviation proportion
 within_subject <- long_dev_long %>%
@@ -898,7 +933,7 @@ ggplot(summary_stats_long, aes(x = transition_type, y = prop, fill = transition_
 
 # Threshold-based classification
 binary_df <- long %>%
-  select(eid, age, session, ends_with("z_score")) %>%
+  select(eid, Disease_duration, session, ends_with("z_score")) %>%
   mutate(across(ends_with("z_score"), ~ ifelse(. <= -1.96, 1, 0)))
 
 # Helper to compute transitions
